@@ -1,0 +1,6 @@
+
+arabert_toxic_classifier/model.safetensors
+
+
+arabert_toxic_classifier/*.json
+
