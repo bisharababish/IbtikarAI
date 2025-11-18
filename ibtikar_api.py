@@ -25,8 +25,8 @@ def get_model():
     if not _model_loaded:
         _model_loading = True
         try:
-        print("Loading model (first request)...")
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+            print("Loading model (first request)...")
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
         
         # Use HuggingFace model - can be overridden with HUGGINGFACE_MODEL_ID env var
         # Using a smaller, faster model that works better on free tier
