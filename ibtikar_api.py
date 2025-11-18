@@ -65,16 +65,16 @@ def get_model():
             error_msg = str(e)
             print(f"Error loading model: {e}")
             
-            if "404" in error_msg or "not found" in error_msg.lower():
-                raise ValueError(
-                    f"Model not found on HuggingFace: {model_path}\n"
-                    f"Please:\n"
-                    f"1. Upload your model to HuggingFace (see HUGGINGFACE-SETUP.md)\n"
-                    f"2. Update HUGGINGFACE_MODEL_ID environment variable or model_path in code\n"
-                    f"3. Or ensure local model files exist in ./arabert_toxic_classifier/"
-                )
-            else:
-                raise
+            # Don't raise - let the endpoint handle it gracefully
+            error_details = (
+                f"Model not found on HuggingFace: {model_path}\n"
+                f"Please:\n"
+                f"1. Upload your model to HuggingFace (see HUGGINGFACE-SETUP.md)\n"
+                f"2. Update HUGGINGFACE_MODEL_ID environment variable or model_path in code\n"
+                f"3. Or ensure local model files exist in ./arabert_toxic_classifier/"
+            ) if ("404" in error_msg or "not found" in error_msg.lower()) else error_msg
+            
+            raise ValueError(error_details)
     
     return _model, _tokenizer
 
@@ -103,7 +103,16 @@ async def analyze_text(request: TextRequest):
     """
     try:
         # Lazy load model on first request
-        model, tokenizer = get_model()
+        try:
+            model, tokenizer = get_model()
+        except Exception as model_error:
+            error_msg = str(model_error)
+            # Return proper error response instead of crashing
+            return AnalysisResponse(
+                toxic=False,
+                confidence=0.0,
+                message=f"Model loading error: {error_msg[:200]}"  # Truncate long errors
+            )
         
         # Tokenize input
         inputs = tokenizer(request.text, return_tensors="pt", truncation=True, max_length=512)
@@ -123,9 +132,13 @@ async def analyze_text(request: TextRequest):
             message="Analysis complete"
         )
     except Exception as e:
+        # Catch any other errors and return proper response
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in analyze_text: {error_details}")
         return AnalysisResponse(
             toxic=False,
             confidence=0.0,
-            message=f"Error: {str(e)}"
+            message=f"Error: {str(e)[:200]}"
         )
 
