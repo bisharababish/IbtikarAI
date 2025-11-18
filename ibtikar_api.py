@@ -28,11 +28,43 @@ def get_model():
         # Check if model file is missing or empty (Git LFS placeholder)
         if not os.path.exists(model_file) or (os.path.exists(model_file) and os.path.getsize(model_file) < 1000):
             print("Model file missing or empty (Git LFS issue)")
-            print("Will try to load from local path first, then fallback to HuggingFace if needed")
+            print("Attempting to download model files from GitHub...")
+            
+            # Download model files from GitHub raw URLs
+            import requests
+            base_url = "https://raw.githubusercontent.com/bisharababish/IbtikarAI/main/arabert_toxic_classifier"
+            
+            os.makedirs(model_path, exist_ok=True)
+            
+            files_to_download = [
+                "config.json",
+                "model.safetensors", 
+                "special_tokens_map.json",
+                "tokenizer_config.json",
+                "tokenizer.json",
+                "vocab.txt"
+            ]
+            
+            for filename in files_to_download:
+                file_path = f"{model_path}/{filename}"
+                if not os.path.exists(file_path) or os.path.getsize(file_path) < 100:
+                    print(f"Downloading {filename}...")
+                    try:
+                        response = requests.get(f"{base_url}/{filename}", stream=True)
+                        if response.status_code == 200:
+                            with open(file_path, 'wb') as f:
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                            print(f"✓ Downloaded {filename}")
+                        else:
+                            print(f"⚠ Could not download {filename} (status: {response.status_code})")
+                    except Exception as e:
+                        print(f"⚠ Error downloading {filename}: {e}")
+            
             use_huggingface_fallback = True
         
         try:
-            # Try loading from local path first
+            # Try loading from local path
             print(f"Attempting to load model from: {model_path}")
             _tokenizer = AutoTokenizer.from_pretrained(model_path)
             _model = AutoModelForSequenceClassification.from_pretrained(model_path)
