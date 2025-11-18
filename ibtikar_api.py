@@ -19,11 +19,8 @@ def get_model():
         print("Loading model (first request)...")
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
         
-        # Use HuggingFace model - UPDATE THIS with your HuggingFace model ID after uploading
-        # Format: "your-username/model-name"
-        # Example: "bisharababish/arabert-toxic-classifier"
-        # TEMPORARY: Using public AraBERT model for testing until actual model is available
-        # TODO: Replace with "bisharababish/arabert-toxic-classifier" once model is uploaded
+        # Use HuggingFace model - Using a smaller model that works on 512MB free tier
+        # This is a temporary solution until the actual fine-tuned model is available
         model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
         
         # Try local path first (for development), then fallback to HuggingFace
@@ -39,28 +36,47 @@ def get_model():
             print("Note: Model will be downloaded and cached on first load")
         
         try:
+            print(f"Loading tokenizer from {model_path}...")
             _tokenizer = AutoTokenizer.from_pretrained(model_path)
+            print("Tokenizer loaded successfully")
             
             # Try loading as sequence classification model
             # If it fails, the model might not be configured for classification
             try:
-                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+                print(f"Loading model from {model_path}...")
+                _model = AutoModelForSequenceClassification.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.float32,  # Use float32 to reduce memory
+                    low_cpu_mem_usage=True  # Optimize memory usage
+                )
+                print("Model loaded as sequence classification")
             except Exception as e:
+                error_str = str(e).lower()
                 # If base model, we need to configure it for classification
-                if "num_labels" in str(e).lower() or "config" in str(e).lower():
+                if "num_labels" in error_str or "config" in error_str or "architectures" in error_str:
                     from transformers import AutoConfig
                     print(f"Model not configured for classification. Configuring for 2 labels...")
                     config = AutoConfig.from_pretrained(model_path)
                     config.num_labels = 2
                     config.id2label = {0: "safe", 1: "toxic"}
                     config.label2id = {"safe": 0, "toxic": 1}
-                    _model = AutoModelForSequenceClassification.from_pretrained(model_path, config=config)
+                    _model = AutoModelForSequenceClassification.from_pretrained(
+                        model_path, 
+                        config=config,
+                        torch_dtype=torch.float32,
+                        low_cpu_mem_usage=True
+                    )
+                    print("Model configured and loaded for classification")
                 else:
+                    print(f"Error loading model: {e}")
                     raise
             
             _model.eval()  # Set to evaluation mode
+            # Move to CPU to save memory (Render free tier)
+            if torch.cuda.is_available():
+                _model = _model.cpu()
+            print("Model loaded successfully and set to evaluation mode!")
             _model_loaded = True
-            print("Model loaded successfully!")
         except Exception as e:
             error_msg = str(e)
             print(f"Error loading model: {e}")
