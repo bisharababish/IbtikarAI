@@ -40,7 +40,24 @@ def get_model():
         
         try:
             _tokenizer = AutoTokenizer.from_pretrained(model_path)
-            _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            
+            # Try loading as sequence classification model
+            # If it fails, the model might not be configured for classification
+            try:
+                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            except Exception as e:
+                # If base model, we need to configure it for classification
+                if "num_labels" in str(e).lower() or "config" in str(e).lower():
+                    from transformers import AutoConfig
+                    print(f"Model not configured for classification. Configuring for 2 labels...")
+                    config = AutoConfig.from_pretrained(model_path)
+                    config.num_labels = 2
+                    config.id2label = {0: "safe", 1: "toxic"}
+                    config.label2id = {"safe": 0, "toxic": 1}
+                    _model = AutoModelForSequenceClassification.from_pretrained(model_path, config=config)
+                else:
+                    raise
+            
             _model.eval()  # Set to evaluation mode
             _model_loaded = True
             print("Model loaded successfully!")
