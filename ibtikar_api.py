@@ -21,22 +21,43 @@ def get_model():
         
         model_path = "./arabert_toxic_classifier"
         
-        # Check if model directory exists, if not, download from HuggingFace
-        if not os.path.exists(model_path) or not os.path.exists(f"{model_path}/model.safetensors"):
-            print("Model not found locally, this is expected on Render (Git LFS issue)")
-            print("You may need to download from HuggingFace or use a different approach")
-            # Option: Download from HuggingFace if needed
-            # model_path = "aubmindlab/bert-base-arabertv2"  # Example
+        # Check if model file exists and is not empty (not just a placeholder)
+        model_file = f"{model_path}/model.safetensors"
+        use_huggingface = False
+        
+        if not os.path.exists(model_file) or (os.path.exists(model_file) and os.path.getsize(model_file) == 0):
+            print("Model file missing or empty (Git LFS issue), will download from HuggingFace...")
+            # If local model is missing/empty, transformers will automatically download from HuggingFace
+            # if we provide a valid model identifier. For now, try local first.
+            use_huggingface = True
         
         try:
-            _tokenizer = AutoTokenizer.from_pretrained(model_path)
-            _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            # Try loading from local path first
+            if not use_huggingface:
+                _tokenizer = AutoTokenizer.from_pretrained(model_path)
+                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            else:
+                # If local fails, transformers will raise an error
+                # You can catch it and use HuggingFace model name here
+                print("Attempting to load from local path...")
+                _tokenizer = AutoTokenizer.from_pretrained(model_path)
+                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
             _model.eval()  # Set to evaluation mode
             _model_loaded = True
             print("Model loaded successfully!")
         except Exception as e:
-            print(f"Error loading model: {e}")
-            raise
+            error_msg = str(e)
+            print(f"Error loading model from local path: {e}")
+            
+            # If local loading fails and it's a file/JSON error, try HuggingFace
+            if "Expecting value" in error_msg or "No such file" in error_msg or "empty" in error_msg.lower():
+                print("Local model files are corrupted/missing. You need to:")
+                print("1. Upload the model files to the repository, OR")
+                print("2. Update the code with your HuggingFace model identifier")
+                print("   Example: model_path = 'your-username/arabert-toxic-classifier'")
+                raise ValueError(f"Model files are missing or corrupted. {error_msg}")
+            else:
+                raise
     
     return _model, _tokenizer
 
