@@ -22,7 +22,9 @@ def get_model():
         # Use HuggingFace model - UPDATE THIS with your HuggingFace model ID after uploading
         # Format: "your-username/model-name"
         # Example: "bisharababish/arabert-toxic-classifier"
-        model_path = os.getenv("HUGGINGFACE_MODEL_ID", "bisharababish/arabert-toxic-classifier")
+        # TEMPORARY: Using public AraBERT model for testing until actual model is available
+        # TODO: Replace with "bisharababish/arabert-toxic-classifier" once model is uploaded
+        model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
         
         # Try local path first (for development), then fallback to HuggingFace
         local_path = "./arabert_toxic_classifier"
