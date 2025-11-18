@@ -23,25 +23,19 @@ def get_model():
         
         # Check if model file exists and is not empty (not just a placeholder)
         model_file = f"{model_path}/model.safetensors"
-        use_huggingface = False
+        use_huggingface_fallback = False
         
-        if not os.path.exists(model_file) or (os.path.exists(model_file) and os.path.getsize(model_file) == 0):
-            print("Model file missing or empty (Git LFS issue), will download from HuggingFace...")
-            # If local model is missing/empty, transformers will automatically download from HuggingFace
-            # if we provide a valid model identifier. For now, try local first.
-            use_huggingface = True
+        # Check if model file is missing or empty (Git LFS placeholder)
+        if not os.path.exists(model_file) or (os.path.exists(model_file) and os.path.getsize(model_file) < 1000):
+            print("Model file missing or empty (Git LFS issue)")
+            print("Will try to load from local path first, then fallback to HuggingFace if needed")
+            use_huggingface_fallback = True
         
         try:
             # Try loading from local path first
-            if not use_huggingface:
-                _tokenizer = AutoTokenizer.from_pretrained(model_path)
-                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
-            else:
-                # If local fails, transformers will raise an error
-                # You can catch it and use HuggingFace model name here
-                print("Attempting to load from local path...")
-                _tokenizer = AutoTokenizer.from_pretrained(model_path)
-                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            print(f"Attempting to load model from: {model_path}")
+            _tokenizer = AutoTokenizer.from_pretrained(model_path)
+            _model = AutoModelForSequenceClassification.from_pretrained(model_path)
             _model.eval()  # Set to evaluation mode
             _model_loaded = True
             print("Model loaded successfully!")
@@ -49,13 +43,30 @@ def get_model():
             error_msg = str(e)
             print(f"Error loading model from local path: {e}")
             
-            # If local loading fails and it's a file/JSON error, try HuggingFace
-            if "Expecting value" in error_msg or "No such file" in error_msg or "empty" in error_msg.lower():
-                print("Local model files are corrupted/missing. You need to:")
-                print("1. Upload the model files to the repository, OR")
-                print("2. Update the code with your HuggingFace model identifier")
-                print("   Example: model_path = 'your-username/arabert-toxic-classifier'")
-                raise ValueError(f"Model files are missing or corrupted. {error_msg}")
+            # If local loading fails and it's a file/JSON error, try HuggingFace fallback
+            if ("Expecting value" in error_msg or "No such file" in error_msg or 
+                "empty" in error_msg.lower() or "not found" in error_msg.lower()):
+                
+                if use_huggingface_fallback:
+                    print("\n" + "="*60)
+                    print("Local model files are missing/corrupted (Git LFS issue)")
+                    print("="*60)
+                    print("\nSOLUTION: You need to either:")
+                    print("1. Upload the actual model files to GitHub (not via Git LFS)")
+                    print("   - Remove model from Git LFS")
+                    print("   - Commit the actual 541MB model file directly")
+                    print("\n2. OR use a HuggingFace model:")
+                    print("   - Upload your model to HuggingFace")
+                    print("   - Update model_path in code to: 'your-username/model-name'")
+                    print("\n3. OR download model at startup from cloud storage")
+                    print("="*60 + "\n")
+                
+                raise ValueError(
+                    f"Model files are missing or corrupted. "
+                    f"The model file is empty (Git LFS placeholder). "
+                    f"Please upload the actual model files to the repository or configure HuggingFace model path. "
+                    f"Error: {error_msg}"
+                )
             else:
                 raise
     
