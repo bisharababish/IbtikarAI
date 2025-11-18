@@ -29,9 +29,12 @@ def get_model():
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
             
             # Use HuggingFace model - can be overridden with HUGGINGFACE_MODEL_ID env var
-            # Using a smaller, faster model that works better on free tier
-            # Alternative: "aubmindlab/bert-base-arabertv2" (larger, may cause memory issues)
-            model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
+            # Using smaller model optimized for 512MB free tier
+            # Options:
+            # - "textdetox/bert-multilingual-toxicity-classifier" (RECOMMENDED: ~400MB, pre-trained for toxicity)
+            # - "distilbert-base-multilingual-cased" (SMALLEST: ~250MB, but needs configuration)
+            # - "aubmindlab/bert-base-arabertv2" (LARGEST: ~500MB, may cause memory issues)
+            model_path = os.getenv("HUGGINGFACE_MODEL_ID", "textdetox/bert-multilingual-toxicity-classifier")
             
             # Set timeout for model download (30 seconds)
             os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "300"  # 5 minutes for large models
