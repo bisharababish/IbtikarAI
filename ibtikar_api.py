@@ -49,63 +49,63 @@ def get_model():
                 print("Note: Model will be downloaded and cached on first load")
             
             try:
-            print("Loading tokenizer...")
-            _tokenizer = AutoTokenizer.from_pretrained(
-                model_path,
-                cache_dir="./.cache",  # Local cache
-                local_files_only=False
-            )
-            print("Tokenizer loaded successfully!")
-            
-            # Load model with proper configuration for binary classification
-            print("Loading model (this may take 30-60 seconds on first load)...")
-            from transformers import AutoConfig
-            
-            try:
-                # Try loading as-is first
-                _model = AutoModelForSequenceClassification.from_pretrained(
+                print("Loading tokenizer...")
+                _tokenizer = AutoTokenizer.from_pretrained(
                     model_path,
-                    cache_dir="./.cache",
-                    local_files_only=False,
-                    low_cpu_mem_usage=True,  # Use less memory during loading
-                    torch_dtype=torch.float32  # Use float32 instead of float16
+                    cache_dir="./.cache",  # Local cache
+                    local_files_only=False
                 )
-                print("Model loaded as sequence classification model")
-            except Exception as e:
-                error_str = str(e).lower()
-                # If it fails, configure base model for classification
-                if "num_labels" in error_str or "config" in error_str or "not found" in error_str:
-                    print(f"Configuring base model for binary classification...")
-                    config = AutoConfig.from_pretrained(model_path, cache_dir="./.cache")
-                    config.num_labels = 2
-                    config.id2label = {0: "safe", 1: "toxic"}
-                    config.label2id = {"safe": 0, "toxic": 1}
+                print("Tokenizer loaded successfully!")
+                
+                # Load model with proper configuration for binary classification
+                print("Loading model (this may take 30-60 seconds on first load)...")
+                from transformers import AutoConfig
+                
+                try:
+                    # Try loading as-is first
                     _model = AutoModelForSequenceClassification.from_pretrained(
-                        model_path, 
-                        config=config,
+                        model_path,
                         cache_dir="./.cache",
                         local_files_only=False,
-                        ignore_mismatched_sizes=True,
-                        low_cpu_mem_usage=True,
-                        torch_dtype=torch.float32
+                        low_cpu_mem_usage=True,  # Use less memory during loading
+                        torch_dtype=torch.float32  # Use float32 instead of float16
                     )
-                    print("Model configured and loaded successfully!")
+                    print("Model loaded as sequence classification model")
+                except Exception as e:
+                    error_str = str(e).lower()
+                    # If it fails, configure base model for classification
+                    if "num_labels" in error_str or "config" in error_str or "not found" in error_str:
+                        print(f"Configuring base model for binary classification...")
+                        config = AutoConfig.from_pretrained(model_path, cache_dir="./.cache")
+                        config.num_labels = 2
+                        config.id2label = {0: "safe", 1: "toxic"}
+                        config.label2id = {"safe": 0, "toxic": 1}
+                        _model = AutoModelForSequenceClassification.from_pretrained(
+                            model_path, 
+                            config=config,
+                            cache_dir="./.cache",
+                            local_files_only=False,
+                            ignore_mismatched_sizes=True,
+                            low_cpu_mem_usage=True,
+                            torch_dtype=torch.float32
+                        )
+                        print("Model configured and loaded successfully!")
+                    else:
+                        raise
+                
+                # Set to evaluation mode and disable gradients to save memory
+                _model.eval()
+                for param in _model.parameters():
+                    param.requires_grad = False
+                
+                # Move to CPU (Render free tier doesn't have GPU)
+                if torch.cuda.is_available():
+                    _model = _model.cuda()
                 else:
-                    raise
-            
-            # Set to evaluation mode and disable gradients to save memory
-            _model.eval()
-            for param in _model.parameters():
-                param.requires_grad = False
-            
-            # Move to CPU (Render free tier doesn't have GPU)
-            if torch.cuda.is_available():
-                _model = _model.cuda()
-            else:
-                _model = _model.cpu()
-            
-            _model_loaded = True
-            print("Model loaded and ready!")
+                    _model = _model.cpu()
+                
+                _model_loaded = True
+                print("Model loaded and ready!")
             
         except Exception as e:
             error_msg = str(e)
