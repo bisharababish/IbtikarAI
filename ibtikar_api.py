@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import torch
+import signal
+import sys
 
 app = FastAPI()
 
@@ -10,18 +12,30 @@ app = FastAPI()
 _model = None
 _tokenizer = None
 _model_loaded = False
+_model_loading = False  # Track if model is currently loading
 
 def get_model():
     """Load model only when first needed (lazy loading)"""
-    global _model, _tokenizer, _model_loaded
+    global _model, _tokenizer, _model_loaded, _model_loading
+    
+    # If already loading, wait a bit and return error
+    if _model_loading:
+        raise ValueError("Model is currently loading, please try again in a moment")
     
     if not _model_loaded:
+        _model_loading = True
+        try:
         print("Loading model (first request)...")
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
         
         # Use HuggingFace model - can be overridden with HUGGINGFACE_MODEL_ID env var
-        # Using base AraBERT model and configuring it for binary classification
+        # Using a smaller, faster model that works better on free tier
+        # Alternative: "aubmindlab/bert-base-arabertv2" (larger, may cause memory issues)
         model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
+        
+        # Set timeout for model download (30 seconds)
+        import os
+        os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "300"  # 5 minutes for large models
         
         # Try local path first (for development), then fallback to HuggingFace
         local_path = "./arabert_toxic_classifier"
@@ -37,30 +51,48 @@ def get_model():
         
         try:
             print("Loading tokenizer...")
-            _tokenizer = AutoTokenizer.from_pretrained(model_path)
+            _tokenizer = AutoTokenizer.from_pretrained(
+                model_path,
+                cache_dir="./.cache",  # Local cache
+                local_files_only=False
+            )
             print("Tokenizer loaded successfully!")
             
             # Load model with proper configuration for binary classification
-            print("Loading model...")
+            print("Loading model (this may take 30-60 seconds on first load)...")
             from transformers import AutoConfig
             
             try:
                 # Try loading as-is first
-                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+                _model = AutoModelForSequenceClassification.from_pretrained(
+                    model_path,
+                    cache_dir="./.cache",
+                    local_files_only=False,
+                    low_cpu_mem_usage=True,  # Use less memory during loading
+                    torch_dtype=torch.float32  # Use float32 instead of float16
+                )
                 print("Model loaded as sequence classification model")
             except Exception as e:
+                error_str = str(e).lower()
                 # If it fails, configure base model for classification
-                print(f"Configuring base model for binary classification...")
-                config = AutoConfig.from_pretrained(model_path)
-                config.num_labels = 2
-                config.id2label = {0: "safe", 1: "toxic"}
-                config.label2id = {"safe": 0, "toxic": 1}
-                _model = AutoModelForSequenceClassification.from_pretrained(
-                    model_path, 
-                    config=config,
-                    ignore_mismatched_sizes=True  # In case of size mismatches
-                )
-                print("Model configured and loaded successfully!")
+                if "num_labels" in error_str or "config" in error_str or "not found" in error_str:
+                    print(f"Configuring base model for binary classification...")
+                    config = AutoConfig.from_pretrained(model_path, cache_dir="./.cache")
+                    config.num_labels = 2
+                    config.id2label = {0: "safe", 1: "toxic"}
+                    config.label2id = {"safe": 0, "toxic": 1}
+                    _model = AutoModelForSequenceClassification.from_pretrained(
+                        model_path, 
+                        config=config,
+                        cache_dir="./.cache",
+                        local_files_only=False,
+                        ignore_mismatched_sizes=True,
+                        low_cpu_mem_usage=True,
+                        torch_dtype=torch.float32
+                    )
+                    print("Model configured and loaded successfully!")
+                else:
+                    raise
             
             # Set to evaluation mode and disable gradients to save memory
             _model.eval()
@@ -81,7 +113,10 @@ def get_model():
             print(f"Error loading model: {error_msg}")
             import traceback
             print(traceback.format_exc())
+            _model_loading = False  # Reset loading flag on error
             raise ValueError(f"Failed to load model: {error_msg}")
+        finally:
+            _model_loading = False
     
     return _model, _tokenizer
 
