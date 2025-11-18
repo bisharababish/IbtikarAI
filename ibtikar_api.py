@@ -19,53 +19,24 @@ def get_model():
         print("Loading model (first request)...")
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
         
-        model_path = "./arabert_toxic_classifier"
+        # Use HuggingFace model - UPDATE THIS with your HuggingFace model ID after uploading
+        # Format: "your-username/model-name"
+        # Example: "bisharababish/arabert-toxic-classifier"
+        model_path = os.getenv("HUGGINGFACE_MODEL_ID", "bisharababish/arabert-toxic-classifier")
         
-        # Check if model file exists and is not empty (not just a placeholder)
-        model_file = f"{model_path}/model.safetensors"
-        use_huggingface_fallback = False
+        # Try local path first (for development), then fallback to HuggingFace
+        local_path = "./arabert_toxic_classifier"
+        model_file = f"{local_path}/model.safetensors"
         
-        # Check if model file is missing or empty (Git LFS placeholder)
-        if not os.path.exists(model_file) or (os.path.exists(model_file) and os.path.getsize(model_file) < 1000):
-            print("Model file missing or empty (Git LFS issue)")
-            print("Attempting to download model files from GitHub...")
-            
-            # Download model files from GitHub raw URLs
-            import requests
-            base_url = "https://raw.githubusercontent.com/bisharababish/IbtikarAI/main/arabert_toxic_classifier"
-            
-            os.makedirs(model_path, exist_ok=True)
-            
-            files_to_download = [
-                "config.json",
-                "model.safetensors", 
-                "special_tokens_map.json",
-                "tokenizer_config.json",
-                "tokenizer.json",
-                "vocab.txt"
-            ]
-            
-            for filename in files_to_download:
-                file_path = f"{model_path}/{filename}"
-                if not os.path.exists(file_path) or os.path.getsize(file_path) < 100:
-                    print(f"Downloading {filename}...")
-                    try:
-                        response = requests.get(f"{base_url}/{filename}", stream=True)
-                        if response.status_code == 200:
-                            with open(file_path, 'wb') as f:
-                                for chunk in response.iter_content(chunk_size=8192):
-                                    f.write(chunk)
-                            print(f"✓ Downloaded {filename}")
-                        else:
-                            print(f"⚠ Could not download {filename} (status: {response.status_code})")
-                    except Exception as e:
-                        print(f"⚠ Error downloading {filename}: {e}")
-            
-            use_huggingface_fallback = True
+        # Check if local model exists and is valid
+        if os.path.exists(model_file) and os.path.getsize(model_file) > 1000:
+            print(f"Loading model from local path: {local_path}")
+            model_path = local_path
+        else:
+            print(f"Local model not found, loading from HuggingFace: {model_path}")
+            print("Note: Model will be downloaded and cached on first load")
         
         try:
-            # Try loading from local path
-            print(f"Attempting to load model from: {model_path}")
             _tokenizer = AutoTokenizer.from_pretrained(model_path)
             _model = AutoModelForSequenceClassification.from_pretrained(model_path)
             _model.eval()  # Set to evaluation mode
@@ -73,31 +44,15 @@ def get_model():
             print("Model loaded successfully!")
         except Exception as e:
             error_msg = str(e)
-            print(f"Error loading model from local path: {e}")
+            print(f"Error loading model: {e}")
             
-            # If local loading fails and it's a file/JSON error, try HuggingFace fallback
-            if ("Expecting value" in error_msg or "No such file" in error_msg or 
-                "empty" in error_msg.lower() or "not found" in error_msg.lower()):
-                
-                if use_huggingface_fallback:
-                    print("\n" + "="*60)
-                    print("Local model files are missing/corrupted (Git LFS issue)")
-                    print("="*60)
-                    print("\nSOLUTION: You need to either:")
-                    print("1. Upload the actual model files to GitHub (not via Git LFS)")
-                    print("   - Remove model from Git LFS")
-                    print("   - Commit the actual 541MB model file directly")
-                    print("\n2. OR use a HuggingFace model:")
-                    print("   - Upload your model to HuggingFace")
-                    print("   - Update model_path in code to: 'your-username/model-name'")
-                    print("\n3. OR download model at startup from cloud storage")
-                    print("="*60 + "\n")
-                
+            if "404" in error_msg or "not found" in error_msg.lower():
                 raise ValueError(
-                    f"Model files are missing or corrupted. "
-                    f"The model file is empty (Git LFS placeholder). "
-                    f"Please upload the actual model files to the repository or configure HuggingFace model path. "
-                    f"Error: {error_msg}"
+                    f"Model not found on HuggingFace: {model_path}\n"
+                    f"Please:\n"
+                    f"1. Upload your model to HuggingFace (see HUGGINGFACE-SETUP.md)\n"
+                    f"2. Update HUGGINGFACE_MODEL_ID environment variable or model_path in code\n"
+                    f"3. Or ensure local model files exist in ./arabert_toxic_classifier/"
                 )
             else:
                 raise
