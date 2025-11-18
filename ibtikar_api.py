@@ -106,7 +106,9 @@ def get_model():
                 
                 _model_loaded = True
                 print("Model loaded and ready!")
-            
+            except Exception as inner_e:
+                # If inner try fails, re-raise to outer except
+                raise inner_e
         except Exception as e:
             error_msg = str(e)
             print(f"Error loading model: {error_msg}")
