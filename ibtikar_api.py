@@ -27,29 +27,28 @@ def get_model():
         try:
             print("Loading model (first request)...")
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
-        
-        # Use HuggingFace model - can be overridden with HUGGINGFACE_MODEL_ID env var
-        # Using a smaller, faster model that works better on free tier
-        # Alternative: "aubmindlab/bert-base-arabertv2" (larger, may cause memory issues)
-        model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
-        
-        # Set timeout for model download (30 seconds)
-        import os
-        os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "300"  # 5 minutes for large models
-        
-        # Try local path first (for development), then fallback to HuggingFace
-        local_path = "./arabert_toxic_classifier"
-        model_file = f"{local_path}/model.safetensors"
-        
-        # Check if local model exists and is valid (not a Git LFS pointer)
-        if os.path.exists(model_file) and os.path.getsize(model_file) > 1000000:  # > 1MB
-            print(f"Loading model from local path: {local_path}")
-            model_path = local_path
-        else:
-            print(f"Local model not found or invalid, loading from HuggingFace: {model_path}")
-            print("Note: Model will be downloaded and cached on first load")
-        
-        try:
+            
+            # Use HuggingFace model - can be overridden with HUGGINGFACE_MODEL_ID env var
+            # Using a smaller, faster model that works better on free tier
+            # Alternative: "aubmindlab/bert-base-arabertv2" (larger, may cause memory issues)
+            model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
+            
+            # Set timeout for model download (30 seconds)
+            os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "300"  # 5 minutes for large models
+            
+            # Try local path first (for development), then fallback to HuggingFace
+            local_path = "./arabert_toxic_classifier"
+            model_file = f"{local_path}/model.safetensors"
+            
+            # Check if local model exists and is valid (not a Git LFS pointer)
+            if os.path.exists(model_file) and os.path.getsize(model_file) > 1000000:  # > 1MB
+                print(f"Loading model from local path: {local_path}")
+                model_path = local_path
+            else:
+                print(f"Local model not found or invalid, loading from HuggingFace: {model_path}")
+                print("Note: Model will be downloaded and cached on first load")
+            
+            try:
             print("Loading tokenizer...")
             _tokenizer = AutoTokenizer.from_pretrained(
                 model_path,
