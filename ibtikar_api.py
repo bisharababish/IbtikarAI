@@ -19,78 +19,69 @@ def get_model():
         print("Loading model (first request)...")
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
         
-        # Use HuggingFace model - Using a smaller model that works on 512MB free tier
-        # This is a temporary solution until the actual fine-tuned model is available
+        # Use HuggingFace model - can be overridden with HUGGINGFACE_MODEL_ID env var
+        # Using base AraBERT model and configuring it for binary classification
         model_path = os.getenv("HUGGINGFACE_MODEL_ID", "aubmindlab/bert-base-arabertv2")
         
         # Try local path first (for development), then fallback to HuggingFace
         local_path = "./arabert_toxic_classifier"
         model_file = f"{local_path}/model.safetensors"
         
-        # Check if local model exists and is valid
-        if os.path.exists(model_file) and os.path.getsize(model_file) > 1000:
+        # Check if local model exists and is valid (not a Git LFS pointer)
+        if os.path.exists(model_file) and os.path.getsize(model_file) > 1000000:  # > 1MB
             print(f"Loading model from local path: {local_path}")
             model_path = local_path
         else:
-            print(f"Local model not found, loading from HuggingFace: {model_path}")
+            print(f"Local model not found or invalid, loading from HuggingFace: {model_path}")
             print("Note: Model will be downloaded and cached on first load")
         
         try:
-            print(f"Loading tokenizer from {model_path}...")
+            print("Loading tokenizer...")
             _tokenizer = AutoTokenizer.from_pretrained(model_path)
-            print("Tokenizer loaded successfully")
+            print("Tokenizer loaded successfully!")
             
-            # Try loading as sequence classification model
-            # If it fails, the model might not be configured for classification
+            # Load model with proper configuration for binary classification
+            print("Loading model...")
+            from transformers import AutoConfig
+            
             try:
-                print(f"Loading model from {model_path}...")
-                _model = AutoModelForSequenceClassification.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.float32,  # Use float32 to reduce memory
-                    low_cpu_mem_usage=True  # Optimize memory usage
-                )
-                print("Model loaded as sequence classification")
+                # Try loading as-is first
+                _model = AutoModelForSequenceClassification.from_pretrained(model_path)
+                print("Model loaded as sequence classification model")
             except Exception as e:
-                error_str = str(e).lower()
-                # If base model, we need to configure it for classification
-                if "num_labels" in error_str or "config" in error_str or "architectures" in error_str:
-                    from transformers import AutoConfig
-                    print(f"Model not configured for classification. Configuring for 2 labels...")
-                    config = AutoConfig.from_pretrained(model_path)
-                    config.num_labels = 2
-                    config.id2label = {0: "safe", 1: "toxic"}
-                    config.label2id = {"safe": 0, "toxic": 1}
-                    _model = AutoModelForSequenceClassification.from_pretrained(
-                        model_path, 
-                        config=config,
-                        torch_dtype=torch.float32,
-                        low_cpu_mem_usage=True
-                    )
-                    print("Model configured and loaded for classification")
-                else:
-                    print(f"Error loading model: {e}")
-                    raise
+                # If it fails, configure base model for classification
+                print(f"Configuring base model for binary classification...")
+                config = AutoConfig.from_pretrained(model_path)
+                config.num_labels = 2
+                config.id2label = {0: "safe", 1: "toxic"}
+                config.label2id = {"safe": 0, "toxic": 1}
+                _model = AutoModelForSequenceClassification.from_pretrained(
+                    model_path, 
+                    config=config,
+                    ignore_mismatched_sizes=True  # In case of size mismatches
+                )
+                print("Model configured and loaded successfully!")
             
-            _model.eval()  # Set to evaluation mode
-            # Move to CPU to save memory (Render free tier)
+            # Set to evaluation mode and disable gradients to save memory
+            _model.eval()
+            for param in _model.parameters():
+                param.requires_grad = False
+            
+            # Move to CPU (Render free tier doesn't have GPU)
             if torch.cuda.is_available():
+                _model = _model.cuda()
+            else:
                 _model = _model.cpu()
-            print("Model loaded successfully and set to evaluation mode!")
+            
             _model_loaded = True
+            print("Model loaded and ready!")
+            
         except Exception as e:
             error_msg = str(e)
-            print(f"Error loading model: {e}")
-            
-            # Don't raise - let the endpoint handle it gracefully
-            error_details = (
-                f"Model not found on HuggingFace: {model_path}\n"
-                f"Please:\n"
-                f"1. Upload your model to HuggingFace (see HUGGINGFACE-SETUP.md)\n"
-                f"2. Update HUGGINGFACE_MODEL_ID environment variable or model_path in code\n"
-                f"3. Or ensure local model files exist in ./arabert_toxic_classifier/"
-            ) if ("404" in error_msg or "not found" in error_msg.lower()) else error_msg
-            
-            raise ValueError(error_details)
+            print(f"Error loading model: {error_msg}")
+            import traceback
+            print(traceback.format_exc())
+            raise ValueError(f"Failed to load model: {error_msg}")
     
     return _model, _tokenizer
 
@@ -131,15 +122,31 @@ async def analyze_text(request: TextRequest):
             )
         
         # Tokenize input
-        inputs = tokenizer(request.text, return_tensors="pt", truncation=True, max_length=512)
+        inputs = tokenizer(
+            request.text, 
+            return_tensors="pt", 
+            truncation=True, 
+            max_length=512,
+            padding=True
+        )
+        
+        # Move inputs to same device as model
+        device = next(model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         
         # Get prediction
         with torch.no_grad():
             outputs = model(**inputs)
-            predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
+            logits = outputs.logits
+            predictions = torch.nn.functional.softmax(logits, dim=-1)
         
-        # Get toxic probability (assuming binary classification)
-        toxic_prob = predictions[0][1].item() if predictions.shape[1] > 1 else predictions[0][0].item()
+        # Get toxic probability (binary classification: 0=safe, 1=toxic)
+        if predictions.shape[1] >= 2:
+            toxic_prob = predictions[0][1].item()  # Probability of class 1 (toxic)
+        else:
+            # Single output, treat as toxic probability
+            toxic_prob = predictions[0][0].item()
+        
         is_toxic = toxic_prob > 0.5
         
         return AnalysisResponse(
